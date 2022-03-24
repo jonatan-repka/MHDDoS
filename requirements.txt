@@ -7,3 +7,4 @@ psutil>=5.9.0
 icmplib>=2.1.1
 git+https://github.com/MHProDev/PyRoxy.git
 yarl~=1.7.2
+google-cloud-logging==3.0.0

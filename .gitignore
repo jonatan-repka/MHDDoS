@@ -1,4 +1,6 @@
 venv
 /.idea/
 files/proxies/*
+!files/proxies/sock-zero.txt
 .DS_Store
+__pycache__

