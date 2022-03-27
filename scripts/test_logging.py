@@ -19,3 +19,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+# git config --global user.email "jonatan.repka@my.com"
+# git config --global user.name "Jonatan Repka"
